@@ -1,16 +1,42 @@
 import React, { useState } from 'react';
-import { Conversation } from '../types/inbox';
+import { Conversation, AuditLogEntry, ConsentStatus } from '../types/inbox';
+import { useAuth } from '../context/AuthContext';
 
 interface ContactPanelProps {
   conversation: Conversation | null;
   onToggleHumanTakeover: (conversationId?: string) => void;
+  onUpdateCandidateStatus?: (
+    conversationId: string,
+    updates: {
+      tags?: string[];
+      assignedTo?: string;
+      notes?: string;
+      consentStatus?: ConsentStatus;
+    }
+  ) => void;
+  auditLogs?: AuditLogEntry[];
 }
+
+const CANDIDATE_STAGES = [
+  '初筛通过',
+  '面试邀约中',
+  '技术初试',
+  '终面评审',
+  '已发放 Offer',
+  '已入职',
+  '暂不匹配',
+];
 
 export const ContactPanel: React.FC<ContactPanelProps> = ({
   conversation,
   onToggleHumanTakeover,
+  onUpdateCandidateStatus,
+  auditLogs = [],
 }) => {
+  const { currentUser, isLeadOrAdmin, recruiters } = useAuth();
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
 
   if (!conversation) {
     return (
@@ -23,12 +49,43 @@ export const ContactPanel: React.FC<ContactPanelProps> = ({
   const { contact, line, humanTakeover } = conversation;
   const isOptedOut = contact.consentStatus === 'opt_out';
   const isOfficialLine = line === 'official';
+  const isRecruitLine = line === 'recruit';
 
   const copyToClipboard = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
     setCopiedField(fieldName);
     setTimeout(() => setCopiedField(null), 1500);
   };
+
+  const handleRecruiterChange = (newRecruiter: string) => {
+    if (!onUpdateCandidateStatus) return;
+    onUpdateCandidateStatus(conversation.id, {
+      assignedTo: newRecruiter,
+    });
+  };
+
+  const handleStageSelect = (stage: string) => {
+    if (!onUpdateCandidateStatus) return;
+    const existingTags = contact.tags || [];
+    // Replace stage tag if exists, or append
+    const filtered = existingTags.filter((t) => !CANDIDATE_STAGES.includes(t));
+    const nextTags = [...filtered, stage];
+    onUpdateCandidateStatus(conversation.id, {
+      tags: nextTags,
+    });
+  };
+
+  const handleSaveNotes = () => {
+    if (!onUpdateCandidateStatus) return;
+    onUpdateCandidateStatus(conversation.id, {
+      notes: notesDraft,
+    });
+    setIsEditingNotes(false);
+  };
+
+  const conversationAuditLogs = auditLogs.filter(
+    (log) => log.conversationId === conversation.id
+  );
 
   return (
     <aside
@@ -42,7 +99,11 @@ export const ContactPanel: React.FC<ContactPanelProps> = ({
         {isOptedOut && (
           <div className="w-full mb-3 p-2 bg-red-100 border border-red-300 text-red-700 rounded-lg text-xs flex items-center space-x-1.5 justify-center font-bold">
             <svg className="w-4 h-4 shrink-0 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                clipRule="evenodd"
+              />
             </svg>
             <span>已退订 (OPT-OUT 状态)</span>
           </div>
@@ -74,7 +135,11 @@ export const ContactPanel: React.FC<ContactPanelProps> = ({
           {contact.tags.map((tag) => (
             <span
               key={tag}
-              className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200"
+              className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                CANDIDATE_STAGES.includes(tag)
+                  ? 'bg-purple-50 text-purple-700 border-purple-200 font-semibold'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}
             >
               {tag}
             </span>
@@ -136,7 +201,76 @@ export const ContactPanel: React.FC<ContactPanelProps> = ({
         </div>
       )}
 
-      {/* 3. Dual-track Identity Information */}
+      {/* 3. RECRUIT 专线隔离专属：负责顾问与候选人阶段调整 (带自动审计记录) */}
+      {isRecruitLine && (
+        <div className="p-4 border-b border-purple-100 bg-purple-50/40 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-purple-900 flex items-center space-x-1">
+              <span>🎯</span>
+              <span>招聘专线控制</span>
+            </span>
+            <span className="text-[10px] text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded font-mono">
+              Auto-Audit
+            </span>
+          </div>
+
+          {/* Assigned Recruiter Selector */}
+          <div className="bg-white p-2.5 rounded-lg border border-purple-200 space-y-1">
+            <div className="text-[10px] text-slate-500 font-medium flex items-center justify-between">
+              <span>负责招聘官 (Assigned Recruiter):</span>
+              {isLeadOrAdmin && (
+                <span className="text-indigo-600 font-bold">可管理调整</span>
+              )}
+            </div>
+
+            {isLeadOrAdmin ? (
+              <select
+                value={contact.assignedTo || 'Wong Qi En'}
+                onChange={(e) => handleRecruiterChange(e.target.value)}
+                className="w-full mt-1 bg-white border border-purple-300 rounded px-2 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              >
+                {recruiters.map((rec) => (
+                  <option key={rec.id} value={rec.name}>
+                    {rec.name} ({rec.role})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="font-bold text-slate-800 text-xs mt-0.5">
+                {contact.assignedTo || '待分配'}
+              </div>
+            )}
+          </div>
+
+          {/* Candidate Stage Selector */}
+          <div className="bg-white p-2.5 rounded-lg border border-purple-200 space-y-1.5">
+            <div className="text-[10px] text-slate-500 font-medium">
+              快速标记候选人流转状态 (自动同步审计):
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {CANDIDATE_STAGES.slice(0, 5).map((stage) => {
+                const isActive = contact.tags?.includes(stage);
+                return (
+                  <button
+                    key={stage}
+                    type="button"
+                    onClick={() => handleStageSelect(stage)}
+                    className={`px-2 py-0.5 rounded text-[10px] transition-all font-medium ${
+                      isActive
+                        ? 'bg-purple-600 text-white font-bold shadow-2xs'
+                        : 'bg-slate-100 hover:bg-purple-100 text-slate-600'
+                    }`}
+                  >
+                    {stage}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Dual-track Identity Information */}
       <div className="p-4 border-b border-slate-100 space-y-3">
         <h4 className="text-xs font-bold text-slate-700 tracking-wider uppercase">
           双轨身份与通道详情
@@ -174,14 +308,16 @@ export const ContactPanel: React.FC<ContactPanelProps> = ({
           )}
         </div>
 
-        {/* Assigned Staff */}
-        <div className="flex items-center justify-between text-xs p-1">
-          <span className="text-slate-500">负责顾问：</span>
-          <span className="font-medium text-slate-800">{contact.assignedTo || '待分配'}</span>
-        </div>
+        {/* Assigned Staff (For Non-Recruit lines) */}
+        {!isRecruitLine && (
+          <div className="flex items-center justify-between text-xs p-1">
+            <span className="text-slate-500">负责顾问：</span>
+            <span className="font-medium text-slate-800">{contact.assignedTo || '待分配'}</span>
+          </div>
+        )}
       </div>
 
-      {/* 4. Risk & Compliance Guardrails */}
+      {/* 5. Risk & Compliance Guardrails */}
       <div className="p-4 border-b border-slate-100 space-y-3">
         <h4 className="text-xs font-bold text-slate-700 tracking-wider uppercase">
           风控与合规状态
@@ -218,16 +354,93 @@ export const ContactPanel: React.FC<ContactPanelProps> = ({
         </div>
       </div>
 
-      {/* 5. Recruiter Internal Notes */}
-      <div className="p-4 flex-1">
-        <h4 className="text-xs font-bold text-slate-700 tracking-wider uppercase mb-2">
-          招聘顾问内部备忘
-        </h4>
-        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 leading-relaxed min-h-[90px]">
-          {contact.notes || '暂无内部备注。'}
+      {/* 6. Recruiter Internal Notes */}
+      <div className="p-4 border-b border-slate-100">
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-xs font-bold text-slate-700 tracking-wider uppercase">
+            招聘顾问内部备忘
+          </h4>
+          {!isEditingNotes ? (
+            <button
+              onClick={() => {
+                setNotesDraft(contact.notes || '');
+                setIsEditingNotes(true);
+              }}
+              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium"
+            >
+              编辑
+            </button>
+          ) : (
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setIsEditingNotes(false)}
+                className="text-[11px] text-slate-400 hover:text-slate-600"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveNotes}
+                className="text-[11px] text-blue-600 hover:text-blue-800 font-bold"
+              >
+                保存
+              </button>
+            </div>
+          )}
         </div>
+
+        {isEditingNotes ? (
+          <textarea
+            value={notesDraft}
+            onChange={(e) => setNotesDraft(e.target.value)}
+            rows={4}
+            className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="输入内部沟通备忘与候选人画像..."
+          />
+        ) : (
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 leading-relaxed min-h-[70px]">
+            {contact.notes || '暂无内部备注。'}
+          </div>
+        )}
       </div>
+
+      {/* 7. RECRUIT 专线隔离专属：候选人专线审计跟踪流 */}
+      {isRecruitLine && (
+        <div className="p-4 bg-slate-50/60 flex-1">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-bold text-purple-900 tracking-wider uppercase flex items-center space-x-1">
+              <span>📜</span>
+              <span>候选人操作审计快照</span>
+            </h4>
+            <span className="text-[10px] text-slate-400 font-mono">
+              {conversationAuditLogs.length} 条记录
+            </span>
+          </div>
+
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {conversationAuditLogs.slice(0, 5).map((log) => (
+              <div
+                key={log.id}
+                className="p-2 bg-white rounded border border-slate-200 text-[11px] space-y-0.5 shadow-2xs"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-800 truncate mr-1">
+                    {log.summary}
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-mono shrink-0">
+                    {new Date(log.timestamp).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  操作人: {log.operatorName} ({log.operatorRole})
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </aside>
   );
 };
-

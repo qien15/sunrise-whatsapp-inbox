@@ -39,6 +39,39 @@ export interface MessageMedia {
   fileSizeBytes?: number;
 }
 
+export interface MessageAudit {
+  operatorId: string; // e.g. 'sean'
+  operatorName: string; // e.g. 'Sean Tan'
+  operatorRole?: string; // e.g. 'Lead'
+  actingAsName?: string; // e.g. 'Wong Qi En' (if on behalf)
+  actionType: 'direct_send' | 'delegated_send' | 'template_send';
+  displayText: string; // e.g. "由 Sean Tan 代表 Wong Qi En 发送" or "由 Wong Qi En 直接回复"
+  loggedAt: number;
+}
+
+export type CandidateStage = 'initial_screening' | 'interview_scheduled' | 'interviewing' | 'offered' | 'hired' | 'rejected';
+
+export type AuditActionType =
+  | 'message_sent'
+  | 'template_variable_filled'
+  | 'candidate_status_updated'
+  | 'recruiter_takeover_enabled'
+  | 'recruiter_takeover_disabled';
+
+export interface AuditLogEntry {
+  id: string;
+  conversationId: string;
+  line: LineType;
+  timestamp: number;
+  operatorId: string;
+  operatorName: string;
+  operatorRole: string;
+  actingAsName?: string; // If delegated
+  actionType: AuditActionType;
+  summary: string;
+  details?: Record<string, any>;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -53,6 +86,7 @@ export interface Message {
   pricing?: MessagePricing;
   templateName?: string;
   errorMessage?: string;
+  audit?: MessageAudit; // Recruit 专线专用：操作人与代发审计记录
 }
 
 export type ConsentStatus = 'opt_in' | 'opt_out' | 'pending';

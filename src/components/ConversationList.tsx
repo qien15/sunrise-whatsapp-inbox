@@ -1,5 +1,6 @@
 import React from 'react';
 import { Conversation, LineType } from '../types/inbox';
+import { useAuth } from '../context/AuthContext';
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -16,7 +17,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   searchQuery,
   onSearchChange,
 }) => {
-  // Format relative timestamp helper
+  const { currentUser, viewScope, setViewScope } = useAuth();
+
   const formatTime = (timestamp?: number) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
@@ -32,7 +34,6 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     return `${date.getMonth() + 1}/${date.getDate()}`;
   };
 
-  // Line badge rendering
   const renderLineBadge = (line: LineType) => {
     switch (line) {
       case 'official':
@@ -60,8 +61,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({
 
   return (
     <aside className="w-80 h-full bg-white border-r border-slate-200 flex flex-col select-none shrink-0">
-      {/* Search Header */}
-      <div className="p-3.5 border-b border-slate-100 bg-slate-50/50">
+      {/* 1. Search Box */}
+      <div className="p-3 border-b border-slate-100 bg-slate-50/50">
         <div className="relative">
           <input
             type="text"
@@ -94,17 +95,57 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         </div>
       </div>
 
-      {/* Conversation List Counter */}
-      <div className="px-4 py-2 text-[11px] font-medium text-slate-400 bg-slate-50 flex items-center justify-between border-b border-slate-100">
-        <span>会话列表 ({conversations.length})</span>
-        <span className="text-[10px] text-slate-400 font-mono">conversations/{`{line}_{key}`}</span>
+      {/* 2. View Switcher Tabs: [我的专线对话 | 全部线路对话] */}
+      <div className="px-3 py-2 bg-slate-100/70 border-b border-slate-200">
+        <div className="grid grid-cols-2 gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-2xs">
+          <button
+            onClick={() => setViewScope('my_assigned')}
+            className={`py-1 px-2 rounded-md text-[11px] font-semibold transition-all flex items-center justify-center space-x-1 ${
+              viewScope === 'my_assigned'
+                ? 'bg-amber-500 text-slate-950 shadow-xs font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>👤</span>
+            <span>我的负责专线</span>
+          </button>
+          <button
+            onClick={() => setViewScope('all')}
+            className={`py-1 px-2 rounded-md text-[11px] font-semibold transition-all flex items-center justify-center space-x-1 ${
+              viewScope === 'all'
+                ? 'bg-slate-800 text-white shadow-xs font-bold'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>🌐</span>
+            <span>全部对话</span>
+          </button>
+        </div>
       </div>
 
-      {/* Cards Scroll Container */}
+      {/* 3. Conversation List Header */}
+      <div className="px-4 py-1.5 text-[11px] font-medium text-slate-400 bg-slate-50 flex items-center justify-between border-b border-slate-100">
+        <span>
+          {viewScope === 'my_assigned' ? `${currentUser?.name || '我'} 的对话` : '全线会话'} (
+          {conversations.length})
+        </span>
+        <span className="text-[10px] text-slate-400 font-mono">1+2 Hybrid</span>
+      </div>
+
+      {/* 4. Cards Scroll Container */}
       <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
         {conversations.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-400">
-            暂无匹配的会话记录
+            <div className="mb-2 text-xl">📭</div>
+            <div>当前筛选下暂无会话</div>
+            {viewScope === 'my_assigned' && (
+              <button
+                onClick={() => setViewScope('all')}
+                className="mt-2 text-[11px] text-blue-600 hover:underline font-medium block mx-auto"
+              >
+                切换为查看“全部线路对话” →
+              </button>
+            )}
           </div>
         ) : (
           conversations.map((item) => {
@@ -133,7 +174,6 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                     alt={item.contact.name}
                     className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-200"
                   />
-                  {/* Human Takeover Active Indicator */}
                   {item.line === 'official' && item.humanTakeover && (
                     <span
                       title="当前为人工接管状态 (Bot 已暂停)"
@@ -154,7 +194,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                       {renderLineBadge(item.line)}
                       {isOptOut && (
                         <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-red-100 text-red-600">
-                          已退订
+                          退订
                         </span>
                       )}
                     </div>
@@ -180,12 +220,17 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                       )}
                     </p>
 
-                    {/* Unread Badge */}
                     {item.unreadCount > 0 && (
                       <span className="shrink-0 bg-blue-600 text-white font-bold text-[10px] rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
                         {item.unreadCount}
                       </span>
                     )}
+                  </div>
+
+                  {/* Assigned Recruiter Tag */}
+                  <div className="mt-1 flex items-center space-x-1 text-[10px] text-slate-400">
+                    <span>顾问:</span>
+                    <span className="font-medium text-slate-600">{item.contact.assignedTo}</span>
                   </div>
                 </div>
               </div>
@@ -196,4 +241,3 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     </aside>
   );
 };
-

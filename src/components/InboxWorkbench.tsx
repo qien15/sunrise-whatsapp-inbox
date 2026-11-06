@@ -25,6 +25,9 @@ export const InboxWorkbench: React.FC = () => {
     sendMessage,
     isWaMeModalOpen,
     setIsWaMeModalOpen,
+    auditLogs,
+    logTemplateVariableFilled,
+    updateCandidateStatus,
   } = useInboxStore();
 
   return (
@@ -57,12 +60,16 @@ export const InboxWorkbench: React.FC = () => {
           cswCountdown={cswCountdown}
           onSendMessage={sendMessage}
           sendKillSwitchActive={systemConfig.sendKillSwitch}
+          auditLogs={auditLogs}
+          onLogTemplateVariableFilled={logTemplateVariableFilled}
         />
 
         {/* Right: Contact Profile & Risk Panel */}
         <ContactPanel
           conversation={activeConversation}
           onToggleHumanTakeover={toggleHumanTakeover}
+          onUpdateCandidateStatus={updateCandidateStatus}
+          auditLogs={auditLogs}
         />
       </div>
 
